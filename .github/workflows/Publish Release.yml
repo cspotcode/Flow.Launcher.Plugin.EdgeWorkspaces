@@ -8,8 +8,10 @@ on:
       - .github/workflows/*
 
 jobs:
-  pack:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2
@@ -27,13 +29,6 @@ jobs:
       - name: Package Release
         run: |
             just pack
-
-  publish:
-    needs: pack
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
       - name: Publish
         uses: softprops/action-gh-release@v2
         # Only release for tags
