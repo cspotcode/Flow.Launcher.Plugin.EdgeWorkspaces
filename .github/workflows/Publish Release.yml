@@ -35,7 +35,7 @@ jobs:
         # (conditional not necessary because of `on` config, but kept for reference)
         # if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: "Flow.Launcher.Plugin.HelloWorldDeno.zip"
+          files: "Flow.Launcher.Plugin.*.zip"
           tag_name: "v${{steps.version.outputs.prop}}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
