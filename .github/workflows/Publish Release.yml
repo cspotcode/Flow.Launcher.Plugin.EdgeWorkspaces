@@ -3,7 +3,7 @@ name: Publish Release
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    tags: ['v*']
     paths-ignore:
       - .github/workflows/*
 
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
@@ -26,10 +26,13 @@ jobs:
       - run: echo ${{steps.version.outputs.prop}}
       - name: Install dependencies
         run: |
-          deno compile -o plugin.exe ./main.ts
+          deno compile --frozen -o plugin.exe ./main.ts
           zip -r Flow.Launcher.Plugin.HelloWorldDeno.zip . -x '*.git*'
       - name: Publish
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
+        # Only release for tags
+        # (conditional not necessary because of `on` config, but kept for reference)
+        # if: startsWith(github.ref, 'refs/tags/')
         with:
           files: "Flow.Launcher.Plugin.HelloWorldDeno.zip"
           tag_name: "v${{steps.version.outputs.prop}}"
