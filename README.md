@@ -1,26 +1,13 @@
-This is an example Deno TypeScript plugin which demonstrates the interaction of
-request from Flow and then call back to the plugin.
+# Microsoft Edge Workspace switcher for Flow Launcher
 
-It is built to a single executable by `deno compile`.
+Type `edge <fuzzy search>` and see a list of workspaces across all profiles in all installations of Microsoft Edge.
 
-## Install devtools
-
-```shell
-winget install DenoLand.Deno
-winget install Casey.Just
-winget install Microsoft.PowerShell
-```
-
-## Compile & install locally into flow launcher
-
-```shell
-just install
-```
-
-Read `justfile` to see the commands.
+Press enter to open the workspace or switch to its window if it's already open.
 
 ## Attribution
 
-Forked from https://github.com/Flow-Launcher/Flow.Launcher.Plugin.HelloWorldNodeJS
+All the Edge-related code -- instance, profile, and workspace discovery, and Edge spawning -- is ported from https://github.com/quachpas/PowerToys-Run-EdgeWorkspaces
 
-Deno logo from https://github.com/Kirlovon/deno-logo
+Based on template https://github.com/cspotcode/Flow.Launcher.Plugin.HelloWorldDeno
+
+Edge logo from https://en.m.wikipedia.org/wiki/File:Microsoft_Edge_logo_%282019%29.png
