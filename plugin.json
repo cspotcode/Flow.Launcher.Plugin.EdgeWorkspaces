@@ -4,7 +4,7 @@
   "Name": "Hello World Deno",
   "Description": "TypeScript plugin example using Deno",
   "Author": "Andrew Bradley",
-  "Version": "1.0.1",
+  "Version": "0.0.1",
   "Language": "Executable",
   "Website": "https://github.com/cspotcode/Flow.Launcher.Plugin.HelloWorldDeno",
   "ExecuteFileName": "plugin.exe",
