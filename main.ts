@@ -1,7 +1,8 @@
 import open from "open";
 import { writeResponse } from "./src/flow-api.ts";
+import { readRequest } from "./src/flow-api.ts";
 
-const { method, parameters } = JSON.parse(Deno.args[0]);
+const {method, parameters} = readRequest();
 
 if (method === "query") {
   writeResponse({
@@ -20,7 +21,7 @@ if (method === "query") {
 
 if (method === "do_something_for_query") {
   const url = parameters[0];
-  await do_something_for_query(url);
+  do_something_for_query(url);
 }
 
 function do_something_for_query(url: string) {
