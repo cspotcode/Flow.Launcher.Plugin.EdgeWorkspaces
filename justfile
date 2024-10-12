@@ -1,6 +1,7 @@
 set windows-shell := ["pwsh", "-noprofile", "-nologo", "-c"]
 
 Name := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Name)'`
+Repo := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Website.match(/github.com\/.+?\/(.+)/)[1])'`
 
 help:
     just --list --unsorted
@@ -18,7 +19,7 @@ install: compile
 
 # Package .zip on CI for release
 pack: compile-ci
-    zip -r Flow.Launcher.Plugin.HelloWorldDeno.zip plugin.exe plugin.json Images
+    zip -r {{Repo}}.zip plugin.exe plugin.json Images
 
 # Test plugin with a query
 query arg:
