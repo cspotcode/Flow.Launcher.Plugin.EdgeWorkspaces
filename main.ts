@@ -1,31 +1,30 @@
-const open = require('./node_modules/open')
+import open from "open";
+import { writeResponse } from "./src/flow-api.ts";
 
-const { method, parameters } = JSON.parse(process.argv[2])
+const { method, parameters } = JSON.parse(Deno.args[0]);
 
 if (method === "query") {
-	console.log(JSON.stringify(
-		{
-			"result": [{
-				"Title": "Hello World Typescript",
-				"Subtitle": "Showing your query parameters: " + parameters + ". Click to open Flow's website",
-				"JsonRPCAction": {
-                    "method": "do_something_for_query",
-                    "parameters": ["https://github.com/Flow-Launcher/Flow.Launcher"]
-                },
-				"IcoPath": "Images\\app.png"
-			}]
-		}
-	));
+  writeResponse({
+    result: [{
+      Title: "Hello World Typescript",
+      Subtitle: "Showing your query parameters: " + parameters +
+        ". Click to open Flow's website",
+      JsonRPCAction: {
+        method: "do_something_for_query",
+        parameters: ["https://github.com/Flow-Launcher/Flow.Launcher"],
+      },
+      IcoPath: "Images\\app.png",
+    }],
+  });
 }
 
 if (method === "do_something_for_query") {
-	url = parameters[0]
-	do_something_for_query(url)
+  const url = parameters[0];
+  await do_something_for_query(url);
 }
 
-function do_something_for_query(url) {
-	open(url);
+function do_something_for_query(url: string) {
+  open(url, {
+    wait: true,
+  });
 }
-
- 
-

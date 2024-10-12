@@ -1,6 +1,0 @@
-{
-  "name": "HelloWorldNodeJS",
-  "dependencies": {
-    "open": "^8.4.0"
-  }
-}
