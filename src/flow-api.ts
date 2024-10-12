@@ -19,6 +19,12 @@ export interface Result<Methods extends string> {
   Subtitle: string;
   JsonRPCAction: JsonRPCAction<Methods>;
   IcoPath: string;
+  TitleHighlightData?: number[];
+  TitleToolTip?: string;
+  SubTitleToolTip?: string;
+  /** Must be int */
+  Score?: number;
+
 }
 export interface JsonRPCAction<Methods extends string> {
   method: Methods;
