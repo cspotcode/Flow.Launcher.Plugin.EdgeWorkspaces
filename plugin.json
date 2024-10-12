@@ -1,12 +1,12 @@
 {
-  "ID": "baa012dc-141d-4df9-a592-79a71e870e10",
-  "ActionKeyword": "hd",
-  "Name": "Hello World Deno",
-  "Description": "TypeScript plugin example using Deno",
+  "ID": "680d46c1-6405-47d4-8edd-62c6058522ae",
+  "ActionKeyword": "edge",
+  "Name": "Edge Workspaces",
+  "Description": "Open Edge Workspaces",
   "Author": "Andrew Bradley",
   "Version": "0.0.1",
   "Language": "Executable",
-  "Website": "https://github.com/cspotcode/Flow.Launcher.Plugin.HelloWorldDeno",
+  "Website": "https://github.com/cspotcode/Flow.Launcher.Plugin.EdgeWorkspaces",
   "ExecuteFileName": "plugin.exe",
   "IcoPath": "Images\\app.png"
 }

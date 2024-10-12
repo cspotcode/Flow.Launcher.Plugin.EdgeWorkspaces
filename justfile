@@ -19,3 +19,7 @@ install: compile
 # Package .zip on CI for release
 pack: compile-ci
     zip -r Flow.Launcher.Plugin.HelloWorldDeno.zip plugin.exe plugin.json Images
+
+# Test plugin with a query
+query arg:
+    deno run -A ./main.ts '{"method": "query", "parameters": ["{{arg}}"]}'
