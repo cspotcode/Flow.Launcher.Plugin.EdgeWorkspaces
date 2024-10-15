@@ -24,9 +24,9 @@ const manifest = {
     Version: plugin.Version,
     Language: plugin.Language,
     Website: plugin.Website,
-    urlDownload: `${plugin.Website}/releases/download/v${plugin.Version}/${repo}.zip`,
-    urlSourceCode: `${plugin.Website}`,
-    icoPath: `https://cdn.jsdelivr.net/gh/${org}/${repo}@main/Images/app.png`
+    UrlDownload: `${plugin.Website}/releases/download/v${plugin.Version}/${repo}.zip`,
+    UrlSourceCode: `${plugin.Website}`,
+    IcoPath: `https://cdn.jsdelivr.net/gh/${org}/${repo}@main/Images/app.png`
 };
 
 const manifestPath = path.resolve(__dirname, `../Flow.Launcher.PluginsManifest/plugins/${plugin.Name}-${plugin.ID}.json`);
