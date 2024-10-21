@@ -3,6 +3,8 @@ set windows-shell := ["pwsh", "-noprofile", "-nologo", "-c"]
 Name := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Name)'`
 Repo := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Website.match(/github.com\/.+?\/(.+)/)[1])'`
 
+InstallDir := "~/AppData/Roaming/FlowLauncher/Plugins/" + Name
+
 help:
     just --list --unsorted
 
@@ -14,8 +16,8 @@ compile-ci:
 
 # Install locally into your Flow Launcher
 install: compile
-    mkdir -f "~/AppData/Roaming/FlowLauncher/Plugins/{{Name}}/Images"
-    cp -recurse -force plugin.exe,plugin.json,Images "~/AppData/Roaming/FlowLauncher/Plugins/{{Name}}/"
+    mkdir -f "{{InstallDir}}/Images"
+    cp -recurse -force plugin.exe,plugin.json,Images "{{InstallDir}}"
 
 # Package .zip on CI for release
 pack: compile-ci
@@ -24,3 +26,10 @@ pack: compile-ci
 # Test plugin with a query
 query arg:
     deno run -A ./main.ts '{"method": "query", "parameters": ["{{arg}}"]}'
+
+e:
+    explorer (get-item "{{InstallDir}}").fullname
+
+# Test *installed* plugin with a query. NOTE: currently hardcoded version number, needs to be updated every time you use it
+query-installed arg:
+    & "{{InstallDir}}-0.0.2/plugin.exe" '{"method": "query", "parameters": ["{{arg}}"]}'

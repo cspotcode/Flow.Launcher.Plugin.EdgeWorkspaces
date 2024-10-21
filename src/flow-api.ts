@@ -1,5 +1,13 @@
 export function readRequest<Methods extends string>(): FlowCall<Methods> {
-  return JSON.parse(Deno.args[0]);
+  try {
+    return JSON.parse(Deno.args[0]);
+  } catch(_err) {
+    const err = _err as Error;
+    throw new Error(`Error parsing JSON-RPC payload from Flow Launcher:\n` +
+      `Args: ${JSON.stringify(Deno.args)}\n` +
+      `Parsing error:\n` +
+      `${err.message}`);
+  }
 }
 
 export function writeResponse(response: FlowResponse) {
