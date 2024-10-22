@@ -12,7 +12,7 @@ help:
 compile:
     deno compile --no-check -A --target x86_64-pc-windows-msvc -o plugin.exe main.ts
 compile-ci:
-    deno compile --no-check -A --target x86_64-pc-windows-msvc -o plugin.exe main.ts --frozen
+    deno compile --no-check -A --target x86_64-pc-windows-msvc --frozen -o plugin.exe main.ts
 
 # Install locally into your Flow Launcher
 install: compile
@@ -32,4 +32,4 @@ e:
 
 # Test *installed* plugin with a query. NOTE: currently hardcoded version number, needs to be updated every time you use it
 query-installed arg:
-    & "{{InstallDir}}-0.0.2/plugin.exe" '{"method": "query", "parameters": ["{{arg}}"]}'
+    & "{{InstallDir}}-0.0.3/plugin.exe" '{"method": "query", "parameters": ["{{arg}}"]}'
