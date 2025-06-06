@@ -32,7 +32,7 @@ export interface Result<Methods extends string> {
   SubTitleToolTip?: string;
   /** Must be int */
   Score?: number;
-
+  RecordKey?: string;
 }
 export interface JsonRPCAction<Methods extends string> {
   method: Methods;

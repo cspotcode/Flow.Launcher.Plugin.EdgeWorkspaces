@@ -56,7 +56,8 @@ if (method === "query") {
           JSON.stringify(w)
         ]
       },
-      IcoPath: "Images\\app.png"
+      IcoPath: "Images\\app.png",
+      RecordKey: `${w.keys.toString()}` // TODO: Use the record key here
     };
     return result;
   });
