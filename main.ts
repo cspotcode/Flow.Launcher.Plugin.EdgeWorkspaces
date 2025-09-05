@@ -57,7 +57,7 @@ if (method === "query") {
         ]
       },
       IcoPath: "Images\\app.png",
-      RecordKey: `${w.keys.toString()}` // TODO: Use the record key here
+      RecordKey: w.workspace.id
     };
     return result;
   });
