@@ -44,7 +44,7 @@ if (method === "query") {
   const results: Result<Methods>[] = matches.map(m => {
     const w = m.item;
     const title = `${w.workspace.name}`;
-    const subtitle = `Workspace: Profile ${w.profile}, ${w.workspace.count} tabs`;
+    const subtitle = `Edge Workspace: Profile "${w.profile}"; ${w.workspace.count} tabs`;
     const result: Result<Methods> = {
       Title: title,
       TitleHighlightData: m.matches ? getHighlight(m.matches) : undefined,
