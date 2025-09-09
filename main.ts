@@ -56,7 +56,8 @@ if (method === "query") {
           JSON.stringify(w)
         ]
       },
-      IcoPath: "Images\\app.png"
+      IcoPath: "Images\\app.png",
+      RecordKey: w.workspace.id
     };
     return result;
   });
