@@ -43,12 +43,14 @@ if (method === "query") {
   // Send back to Flow Launcher
   const results: Result<Methods>[] = matches.map(m => {
     const w = m.item;
+    const title = `${w.workspace.name}`;
+    const subtitle = `Workspace: Profile ${w.profile}, ${w.workspace.count} tabs`;
     const result: Result<Methods> = {
-      Title: `${w.workspace.name}`,
+      Title: title,
       TitleHighlightData: m.matches ? getHighlight(m.matches) : undefined,
-      TitleToolTip: `Tooltip Profile: ${w.profile}`,
-      SubTitleToolTip: `subtitel tooltip: Workspace: Profile ${w.profile}, ${w.workspace.count} tabs`,
-      Subtitle: `Workspace: Profile ${w.profile}, ${w.workspace.count} tabs`,
+      TitleToolTip: title,
+      Subtitle: subtitle,
+      SubTitleToolTip: subtitle,
       Score: Math.floor((1 - m.score!) * scoreRange),
       JsonRPCAction: {
         method: "open_workspace",
