@@ -1,6 +1,6 @@
 // Assumes https://github.com/Flow-Launcher/Flow.Launcher.PluginsManifest is cloned locally
 
-import * as path from 'jsr:@std/path';
+import * as path from '@std/path';
 
 const __dirname = import.meta.dirname!;
 

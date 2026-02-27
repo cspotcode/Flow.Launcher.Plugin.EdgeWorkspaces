@@ -1,5 +1,5 @@
-import { existsSync, walkSync } from "jsr:@std/fs";
-import { join } from "jsr:@std/path";
+import { existsSync, walkSync } from "@std/fs";
+import { join } from "@std/path";
 import type { EdgeInstance } from "./edge-instances.ts";
 
 const edgeUserData = join(Deno.env.get("LOCALAPPDATA")!, "Microsoft", "Edge", "User Data");

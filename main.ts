@@ -1,8 +1,9 @@
 import { writeResponse } from "./src/flow-api.ts";
 import { readRequest, Result } from "./src/flow-api.ts";
-import Fuse, { type FuseResultMatch } from "npm:fuse.js";
+import Fuse, { type FuseResultMatch } from "fuse.js";
 import { getProfiles, getWorkspaces, type WorkspaceDetail } from "./src/edge-workspaces.ts";
 import { discoverEdgeInstances, type EdgeInstance } from "./src/edge-instances.ts";
+import { $ } from 'bun';
 
 type Methods = 'open_workspace';
 
@@ -73,18 +74,7 @@ if (method === "query") {
 if (method === "open_workspace") {
   const workspace = JSON.parse(parameters[0]) as Workspace;
 
-  const command = new Deno.Command(workspace.edgeInstance.ExecutablePath, {
-    args: [
-      `--profile-directory=${workspace.profile}`,
-      `--launch-workspace=${workspace.workspace.id}`
-    ],
-    stdin: 'null',
-    stderr: 'null',
-    stdout: 'null'
-  });
-
-  const childProcess = command.spawn();
-  await childProcess.status;
+  await $`${workspace.edgeInstance.ExecutablePath} --profile-directory=${workspace.profile} --launch-workspace=${workspace.workspace.id}`;
 }
 
 

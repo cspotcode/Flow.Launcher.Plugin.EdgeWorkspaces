@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@std/fs": "npm:@jsr/std__fs",
+    "@std/path": "npm:@jsr/std__path",
+    "fuse.js": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9"
+  }
+}

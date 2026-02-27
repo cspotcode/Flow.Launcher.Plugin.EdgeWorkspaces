@@ -14,6 +14,10 @@ compile:
 compile-ci:
     deno compile --no-check -A --target x86_64-pc-windows-msvc --frozen -o plugin.exe main.ts
 
+# Experiment: bun
+compile-bun:
+    bun build --compile --no-compile-autoload-dotenv --minify --target bun-windows-x64 --outfile plugin-bun.exe main.ts
+
 # Install locally into your Flow Launcher
 install: compile
     mkdir -f "{{InstallDir}}/Images"
