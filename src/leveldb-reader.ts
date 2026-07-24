@@ -6,46 +6,16 @@
  * - https://github.com/google/leveldb/blob/master/doc/table_format.md
  * - https://github.com/google/leveldb/blob/master/doc/log_format.md
  * - Ported from https://github.com/cclgroupltd/ccl_chromium_reader
+ *
+ * Yields `[key, value]` for live entries and `[key, null]` for deletion tombstones
+ * so callers can clear superseded keys when replaying newer SST/WAL writes.
  */
 
 import { join } from "jsr:@std/path";
+import { readVarint32, readVarintNum } from "./varint.ts";
 
-// ---------------------------------------------------------------------------
-// Varint utilities
-// ---------------------------------------------------------------------------
-
-/** Read a 32-bit unsigned varint. Returns [value, bytesConsumed]. */
-function readVarint32(buf: Uint8Array, pos: number): [number, number] {
-  let result = 0;
-  let shift = 0;
-  let i = pos;
-  while (i < buf.length) {
-    const b = buf[i++];
-    result |= (b & 0x7f) << shift;
-    shift += 7;
-    if ((b & 0x80) === 0) return [result >>> 0, i - pos];
-    if (shift >= 32) break;
-  }
-  return [0, 0];
-}
-
-/**
- * Read a varint whose value fits safely in a JS number (< 2^53).
- * Used for file offsets and lengths. Returns [value, bytesConsumed].
- */
-function readVarintNum(buf: Uint8Array, pos: number): [number, number] {
-  let result = 0;
-  let factor = 1;
-  let i = pos;
-  while (i < buf.length) {
-    const b = buf[i++];
-    result += (b & 0x7f) * factor;
-    factor *= 128;
-    if ((b & 0x80) === 0) return [result, i - pos];
-    if (factor > Number.MAX_SAFE_INTEGER) break;
-  }
-  return [0, 0];
-}
+/** Live value, or `null` for a deletion tombstone. */
+export type LevelDbValue = Uint8Array | null;
 
 // ---------------------------------------------------------------------------
 // Snappy decompressor (pure TypeScript, no dependencies)
@@ -55,16 +25,9 @@ function readVarintNum(buf: Uint8Array, pos: number): [number, number] {
 function snappyUncompress(src: Uint8Array): Uint8Array {
   let srcPos = 0;
 
-  // Uncompressed length is a varint at the start
-  let uncompressedLen = 0;
-  let shift = 0;
-  while (srcPos < src.length) {
-    const b = src[srcPos++];
-    uncompressedLen |= (b & 0x7f) << shift;
-    shift += 7;
-    if ((b & 0x80) === 0) break;
-    if (shift >= 32) throw new Error("Snappy: varint overflow");
-  }
+  const [uncompressedLen, lenBytes] = readVarint32(src, 0);
+  if (lenBytes === 0) throw new Error("Snappy: missing length varint");
+  srcPos = lenBytes;
   if (uncompressedLen > 64 * 1024 * 1024) throw new Error("Snappy: unreasonably large output");
 
   const dst = new Uint8Array(uncompressedLen);
@@ -123,8 +86,7 @@ function snappyUncompress(src: Uint8Array): Uint8Array {
 // LevelDB SSTable (.ldb / .sst) reader
 // ---------------------------------------------------------------------------
 
-const BLOCK_TRAILER_SIZE = 5; // 1 byte compression type + 4 bytes CRC32
-const FOOTER_SIZE = 48;       // 40 bytes handles+padding + 8 bytes magic
+const FOOTER_SIZE = 48; // 40 bytes handles+padding + 8 bytes magic
 
 // 0xdb4775248b80fb57 in little-endian two uint32 halves
 const MAGIC_LO = 0x8b80fb57;
@@ -201,13 +163,13 @@ function* iterateDataBlock(
 }
 
 /**
- * Iterate all live user key-value pairs from an SSTable file.
+ * Iterate user key-value pairs from an SSTable file.
  * Internal key format: user_key + 8-byte tag (sequence<<8 | type, LE uint64).
- * type=1 means live value; type=0 means deletion tombstone.
+ * type=1 means live value; type=0 means deletion tombstone (yielded as null).
  */
 function* readLdbFile(
   fileData: Uint8Array,
-): Generator<[key: Uint8Array, value: Uint8Array]> {
+): Generator<[key: Uint8Array, value: LevelDbValue]> {
   if (fileData.length < FOOTER_SIZE) return;
 
   const footerStart = fileData.length - FOOTER_SIZE;
@@ -264,10 +226,13 @@ function* readLdbFile(
       // Lowest byte of packed = value type (1=live, 0=deletion)
       if (internalKey.length < 8) continue;
       const valueType = internalKey[internalKey.length - 8];
-      if (valueType !== 1) continue;
-
       const userKey = internalKey.subarray(0, internalKey.length - 8);
-      yield [userKey, value];
+
+      if (valueType === 1) {
+        yield [userKey, value];
+      } else if (valueType === 0) {
+        yield [userKey, null];
+      }
     }
   }
 }
@@ -284,10 +249,10 @@ const LOG_FIRST = 2;
 const LOG_MIDDLE = 3;
 const LOG_LAST = 4;
 
-/** Parse a WriteBatch payload and yield key-value pairs. */
+/** Parse a WriteBatch payload and yield key-value pairs (null = deletion). */
 function* parseBatch(
   batch: Uint8Array,
-): Generator<[key: Uint8Array, value: Uint8Array]> {
+): Generator<[key: Uint8Array, value: LevelDbValue]> {
   if (batch.length < 12) return;
 
   // Batch header: 8 bytes sequence number + 4 bytes count
@@ -307,7 +272,8 @@ function* parseBatch(
     const key = batch.subarray(offset, offset + keyLen);
     offset += keyLen;
 
-    if (valueType === 1) { // live value
+    if (valueType === 1) {
+      // Live value
       const [valLen, vb] = readVarint32(batch, offset);
       if (vb === 0) return;
       offset += vb;
@@ -316,15 +282,17 @@ function* parseBatch(
       const value = batch.subarray(offset, offset + valLen);
       offset += valLen;
       yield [key, value];
+    } else if (valueType === 0) {
+      // Deletion tombstone — no value bytes follow
+      yield [key, null];
     }
-    // valueType === 0 = deletion tombstone, no value bytes follow
   }
 }
 
-/** Iterate all live key-value pairs from a WAL log file. */
+/** Iterate key-value pairs from a WAL log file (null value = deletion). */
 function* readLogFile(
   fileData: Uint8Array,
-): Generator<[key: Uint8Array, value: Uint8Array]> {
+): Generator<[key: Uint8Array, value: LevelDbValue]> {
   let filePos = 0;
   let currentRecord: Uint8Array | null = null;
 
@@ -377,15 +345,16 @@ function* readLogFile(
 // ---------------------------------------------------------------------------
 
 /**
- * Iterate all live key-value pairs from all .ldb and .log files in a
- * LevelDB directory. Files are processed in ascending file-number order
- * (log files last, since they contain the most recent writes).
+ * Iterate key-value pairs from all .ldb and .log files in a LevelDB directory.
+ * Files are processed in ascending file-number order (log files last, since
+ * they contain the most recent writes). Deletion tombstones are yielded as
+ * `[key, null]` so callers can remove superseded entries.
  *
  * Silently skips files that cannot be read or parsed (e.g. locked by Edge).
  */
 export function* iterateLevelDb(
   dbPath: string,
-): Generator<[key: Uint8Array, value: Uint8Array]> {
+): Generator<[key: Uint8Array, value: LevelDbValue]> {
   let entries: Deno.DirEntry[];
   try {
     entries = [...Deno.readDirSync(dbPath)];
@@ -393,7 +362,6 @@ export function* iterateLevelDb(
     return;
   }
 
-  const isDataFile = (name: string) => /\.(ldb|sst|log)$/i.test(name);
   const fileNum = (name: string) => parseInt(name, 16) || 0;
 
   // Sort: .ldb/.sst first (older), then .log (newest writes)

@@ -2,38 +2,9 @@ import { existsSync, walkSync } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
 import type { EdgeInstance } from "./edge-instances.ts";
 import { iterateLevelDb } from "./leveldb-reader.ts";
+import { parseProto } from "./protobuf.ts";
 
 const TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
-
-// ---------------------------------------------------------------------------
-// Minimal protobuf helpers (varint + length-delimited fields only)
-// ---------------------------------------------------------------------------
-
-function readVarint(buf: Uint8Array, pos: number): [number, number] {
-  let v = 0, shift = 0;
-  while (pos < buf.length) {
-    const b = buf[pos++]; v |= (b & 0x7f) << shift; shift += 7;
-    if (!(b & 0x80)) break;
-  }
-  return [v, pos];
-}
-
-function parseProto(buf: Uint8Array): Map<number, (Uint8Array | number)[]> {
-  const f = new Map<number, (Uint8Array | number)[]>();
-  let pos = 0;
-  while (pos < buf.length) {
-    let tag: number; [tag, pos] = readVarint(buf, pos);
-    if (pos > buf.length) break;
-    const fn = tag >> 3, wt = tag & 7;
-    if (!f.has(fn)) f.set(fn, []);
-    if (wt === 0) { let v: number; [v, pos] = readVarint(buf, pos); f.get(fn)!.push(v); }
-    else if (wt === 2) { let len: number; [len, pos] = readVarint(buf, pos); f.get(fn)!.push(buf.slice(pos, pos + len)); pos += len; }
-    else if (wt === 5) pos += 4;
-    else if (wt === 1) pos += 8;
-    else break; // unknown wire type — stop parsing
-  }
-  return f;
-}
 
 // ---------------------------------------------------------------------------
 // Profile discovery
@@ -94,12 +65,14 @@ function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
   const workspaces = new Map<string, { name: string; color: number; tabCount: number }>();
   const tabCounts = new Map<string, number>();
 
-  // Keep only the most-recent write per key (WAL replays in sequence)
+  // Keep only the most-recent write per key; tombstones (null) clear earlier values
   const latest = new Map<string, Uint8Array>();
   try {
     for (const [key, value] of iterateLevelDb(syncDbPath)) {
       const k = TEXT_DECODER.decode(key);
-      if (k.startsWith("edge_workspace-dt-")) latest.set(k, value);
+      if (!k.startsWith("edge_workspace-dt-")) continue;
+      if (value === null) latest.delete(k);
+      else latest.set(k, value);
     }
   } catch {
     return [];
@@ -183,19 +156,6 @@ function getSyncDataLevelDbCurrentFile(instance: EdgeInstance, profile: string) 
   return join(getSyncDataLevelDbPath(instance, profile), "CURRENT");
 }
 
-/**
- * In Edge >= 146 (Workspaces v2), the Workspaces directory itself IS the
- * LevelDB database (contains CURRENT, MANIFEST, *.ldb, *.log files directly).
- * There is no "LevelDB" subdirectory — the parent folder is the DB root.
- */
-function getLevelDbPath(instance: EdgeInstance, profile: string) {
-  return join(instance.UserData, profile, "Workspaces");
-}
-
-function isLevelDb(dirPath: string): boolean {
-  // A LevelDB database directory always has a "CURRENT" file
-  return existsSync(join(dirPath, "CURRENT"));
-}
 export interface WorkspacesJson {
   edgeWorkspaceCacheVersion: number;
   workspaces: WorkspaceDetail[];
