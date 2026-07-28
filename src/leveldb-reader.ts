@@ -1,6 +1,7 @@
 /**
  * Minimal pure-TypeScript LevelDB reader for Edge Workspaces v2.
  * Reads .ldb (SSTable) and .log (Write-Ahead Log) files from a LevelDB directory.
+ * Snappy block decompression uses the `snappyjs` dependency.
  *
  * Format references:
  * - https://github.com/google/leveldb/blob/master/doc/table_format.md
@@ -12,74 +13,15 @@
  */
 
 import { join } from "jsr:@std/path";
+import { uncompress as snappyUncompress } from "snappyjs";
 import { readVarint32, readVarintNum } from "./varint.ts";
 
 /** Live value, or `null` for a deletion tombstone. */
 export type LevelDbValue = Uint8Array | null;
 
-// ---------------------------------------------------------------------------
-// Snappy decompressor (pure TypeScript, no dependencies)
-// Reference: https://github.com/google/snappy/blob/main/format_description.txt
-// ---------------------------------------------------------------------------
-
-function snappyUncompress(src: Uint8Array): Uint8Array {
-  let srcPos = 0;
-
-  const [uncompressedLen, lenBytes] = readVarint32(src, 0);
-  if (lenBytes === 0) throw new Error("Snappy: missing length varint");
-  srcPos = lenBytes;
-  if (uncompressedLen > 64 * 1024 * 1024) throw new Error("Snappy: unreasonably large output");
-
-  const dst = new Uint8Array(uncompressedLen);
-  let dstPos = 0;
-
-  while (srcPos < src.length) {
-    const tag = src[srcPos++];
-    const type = tag & 0x3;
-
-    if (type === 0) {
-      // Literal element
-      const bits = (tag >> 2) & 0x3f;
-      let len: number;
-      if (bits < 60) {
-        len = bits + 1;
-      } else {
-        const extra = bits - 59; // 1–4 extra bytes
-        len = 0;
-        for (let i = 0; i < extra; i++) len |= src[srcPos++] << (i * 8);
-        len += 1;
-      }
-      dst.set(src.subarray(srcPos, srcPos + len), dstPos);
-      srcPos += len;
-      dstPos += len;
-    } else if (type === 1) {
-      // Copy with 1-byte offset (11-bit offset)
-      const len = ((tag >> 2) & 0x7) + 4;
-      const offset = ((tag & 0xe0) << 3) | src[srcPos++];
-      if (offset === 0 || offset > dstPos) throw new Error("Snappy: bad copy offset");
-      const from = dstPos - offset;
-      for (let i = 0; i < len; i++) dst[dstPos++] = dst[from + i];
-    } else if (type === 2) {
-      // Copy with 2-byte offset
-      const len = ((tag >> 2) & 0x3f) + 1;
-      const offset = src[srcPos] | (src[srcPos + 1] << 8);
-      srcPos += 2;
-      if (offset === 0 || offset > dstPos) throw new Error("Snappy: bad copy offset");
-      const from = dstPos - offset;
-      for (let i = 0; i < len; i++) dst[dstPos++] = dst[from + i];
-    } else {
-      // Copy with 4-byte offset
-      const len = ((tag >> 2) & 0x3f) + 1;
-      const offset = (src[srcPos] | (src[srcPos + 1] << 8) |
-        (src[srcPos + 2] << 16) | ((src[srcPos + 3] << 24) >>> 0)) >>> 0;
-      srcPos += 4;
-      if (offset === 0 || offset > dstPos) throw new Error("Snappy: bad copy offset");
-      const from = dstPos - offset;
-      for (let i = 0; i < len; i++) dst[dstPos++] = dst[from + i];
-    }
-  }
-
-  return dst.subarray(0, dstPos);
+function snappyUncompressBlock(src: Uint8Array): Uint8Array {
+  const out = snappyUncompress(src);
+  return out instanceof Uint8Array ? out : new Uint8Array(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +38,7 @@ function decompressBlock(fileData: Uint8Array, offset: number, length: number): 
   const raw = fileData.subarray(offset, offset + length);
   const comprType = fileData[offset + length]; // first trailer byte = compression type
   if (comprType === 0) return raw;
-  if (comprType === 1) return snappyUncompress(raw);
+  if (comprType === 1) return snappyUncompressBlock(raw);
   throw new Error(`Unsupported LevelDB compression type: ${comprType}`);
 }
 

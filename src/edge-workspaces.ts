@@ -2,9 +2,7 @@ import { existsSync, walkSync } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
 import type { EdgeInstance } from "./edge-instances.ts";
 import { iterateLevelDb } from "./leveldb-reader.ts";
-import { parseProto } from "./protobuf.ts";
-
-const TEXT_DECODER = new TextDecoder("utf-8", { fatal: false });
+import { decodeSyncEntity } from "./protobuf.ts";
 
 // ---------------------------------------------------------------------------
 // Profile discovery
@@ -67,9 +65,10 @@ function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
 
   // Keep only the most-recent write per key; tombstones (null) clear earlier values
   const latest = new Map<string, Uint8Array>();
+  const keyDecoder = new TextDecoder("utf-8", { fatal: false });
   try {
     for (const [key, value] of iterateLevelDb(syncDbPath)) {
-      const k = TEXT_DECODER.decode(key);
+      const k = keyDecoder.decode(key);
       if (!k.startsWith("edge_workspace-dt-")) continue;
       if (value === null) latest.delete(k);
       else latest.set(k, value);
@@ -80,36 +79,18 @@ function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
 
   for (const [, value] of latest) {
     try {
-      const outer = parseProto(value);
-      const innerBytes = outer.get(2)?.[0];
-      if (!(innerBytes instanceof Uint8Array)) continue;
+      const { entity } = decodeSyncEntity(value);
+      if (!entity?.id) continue;
 
-      const inner = parseProto(innerBytes);
-      const idBytes = inner.get(1)?.[0];
-      if (!(idBytes instanceof Uint8Array)) continue;
-      const id = TEXT_DECODER.decode(idBytes);
-
-      if (inner.has(4)) {
-        // Workspace container entity — has metadata (name, color)
-        const metaBytes = inner.get(4)![0];
-        if (metaBytes instanceof Uint8Array) {
-          const sub = parseProto(metaBytes);
-          const nameBytes = sub.get(1)?.[0];
-          const name = nameBytes instanceof Uint8Array ? TEXT_DECODER.decode(nameBytes) : id;
-          const color = (sub.get(2)?.[0] as number) ?? 0;
-          workspaces.set(id, { name, color, tabCount: 0 });
-        }
-      } else if (inner.has(5)) {
-        // Tab entity — sub-field 1 is the parent workspace UUID
-        const tabBytes = inner.get(5)![0];
-        if (tabBytes instanceof Uint8Array) {
-          const sub = parseProto(tabBytes);
-          const parentBytes = sub.get(1)?.[0];
-          if (parentBytes instanceof Uint8Array) {
-            const parentId = TEXT_DECODER.decode(parentBytes);
-            tabCounts.set(parentId, (tabCounts.get(parentId) ?? 0) + 1);
-          }
-        }
+      if (entity.workspace) {
+        workspaces.set(entity.id, {
+          name: entity.workspace.name || entity.id,
+          color: entity.workspace.color ?? 0,
+          tabCount: 0,
+        });
+      } else if (entity.tab?.parentWorkspaceId) {
+        const parentId = entity.tab.parentWorkspaceId;
+        tabCounts.set(parentId, (tabCounts.get(parentId) ?? 0) + 1);
       }
     } catch {
       // Skip malformed entries

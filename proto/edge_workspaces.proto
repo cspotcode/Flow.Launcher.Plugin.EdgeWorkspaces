@@ -1,0 +1,28 @@
+// Reverse-engineered Chromium Edge sync entity shapes for Workspaces v2.
+// Field numbers match wire data observed in Sync Data\LevelDB (edge_workspace-dt-*).
+syntax = "proto3";
+package edge.workspaces;
+
+message SyncEntity {
+  int32 version = 1;
+  EntityData entity = 2;
+}
+
+message EntityData {
+  string id = 1;
+  int64 created = 2;
+  int64 modified = 3;
+  WorkspaceMeta workspace = 4;
+  TabData tab = 5;
+}
+
+message WorkspaceMeta {
+  string name = 1;
+  int32 color = 2;
+}
+
+message TabData {
+  string parent_workspace_id = 1;
+  string url = 3;
+  string title = 4;
+}
