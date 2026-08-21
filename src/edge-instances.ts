@@ -1,5 +1,5 @@
-import { join, basename } from "jsr:@std/path";
-import { existsSync } from "jsr:@std/fs";
+import { join, basename } from "@std/path";
+import { existsSync } from "@std/fs";
 
 enum EdgeVersion {
     Dev,

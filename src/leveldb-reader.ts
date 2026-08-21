@@ -12,7 +12,8 @@
  * so callers can clear superseded keys when replaying newer SST/WAL writes.
  */
 
-import { join } from "jsr:@std/path";
+import { join } from "@std/path";
+// @ts-types="@types/snappyjs"
 import { uncompress as snappyUncompress } from "snappyjs";
 import { readVarint32, readVarintNum } from "./varint.ts";
 
@@ -225,7 +226,7 @@ function* parseBatch(
       offset += valLen;
       yield [key, value];
     } else if (valueType === 0) {
-      // Deletion tombstone — no value bytes follow
+      // Deletion tombstone - no value bytes follow
       yield [key, null];
     }
   }
@@ -304,7 +305,9 @@ export function* iterateLevelDb(
     return;
   }
 
-  const fileNum = (name: string) => parseInt(name, 16) || 0;
+  function fileNum(name: string) {
+    return parseInt(name, 16) || 0;
+  }
 
   // Sort: .ldb/.sst first (older), then .log (newest writes)
   const ldbFiles = entries
@@ -322,7 +325,7 @@ export function* iterateLevelDb(
     try {
       fileData = Deno.readFileSync(filePath);
     } catch {
-      continue; // locked or unreadable — skip
+      continue; // locked or unreadable - skip
     }
 
     try {
@@ -332,7 +335,7 @@ export function* iterateLevelDb(
         yield* readLdbFile(fileData);
       }
     } catch {
-      // Corrupt or unrecognised format — skip
+      // Corrupt or unrecognised format - skip
     }
   }
 }

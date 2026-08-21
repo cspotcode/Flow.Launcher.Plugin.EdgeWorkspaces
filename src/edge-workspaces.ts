@@ -1,5 +1,5 @@
-import { existsSync, walkSync } from "jsr:@std/fs";
-import { join } from "jsr:@std/path";
+import { existsSync, walkSync } from "@std/fs";
+import { join } from "@std/path";
 import type { EdgeInstance } from "./edge-instances.ts";
 import { iterateLevelDb } from "./leveldb-reader.ts";
 import { decodeSyncEntity } from "./protobuf.ts";
@@ -28,7 +28,7 @@ export function getProfiles(edgeInstance: EdgeInstance) {
 // ---------------------------------------------------------------------------
 
 export function getWorkspaces(instance: EdgeInstance, profile: string): WorkspaceDetail[] {
-  // v1: WorkspacesCache (JSON file) — used by Edge < 146
+  // v1: WorkspacesCache (JSON file) - used by Edge < 146
   const cachePath = getWorkspacesCachePath(instance, profile);
   if (existsSync(cachePath)) {
     try {
@@ -41,7 +41,7 @@ export function getWorkspaces(instance: EdgeInstance, profile: string): Workspac
     }
   }
 
-  // v2: Sync Data LevelDB (protobuf) — used by Edge >= 146 after Workspaces v2 migration
+  // v2: Sync Data LevelDB (protobuf) - used by Edge >= 146 after Workspaces v2 migration
   const syncDbPath = getSyncDataLevelDbPath(instance, profile);
   if (existsSync(join(syncDbPath, "CURRENT"))) {
     return getWorkspacesFromSyncData(syncDbPath);
@@ -51,15 +51,6 @@ export function getWorkspaces(instance: EdgeInstance, profile: string): Workspac
 }
 
 function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
-  // edge_workspace-dt-<uuid> entries:
-  //   outer field 2 = EntityData (length-delimited)
-  //     inner field 1 = workspace UUID (string)
-  //     inner field 4 = workspace metadata (nested proto, present on workspace containers)
-  //       sub-field 1 = workspace name (string)
-  //       sub-field 2 = color (varint)
-  //     inner field 5 = tab entry (nested proto, repeated, present on tab entities)
-  //       sub-field 1 = parent workspace UUID (string)
-
   const workspaces = new Map<string, { name: string; color: number; tabCount: number }>();
   const tabCounts = new Map<string, number>();
 

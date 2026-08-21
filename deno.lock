@@ -2,11 +2,15 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/fs@*": "1.0.24",
+    "jsr:@std/fs@^1.0.24": "1.0.24",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@*": "1.1.6",
     "jsr:@std/path@^1.1.5": "1.1.6",
+    "jsr:@std/path@^1.1.6": "1.1.6",
     "npm:@bufbuild/protobuf@2.13.0": "2.13.0",
-    "npm:fuse.js@*": "7.5.0",
+    "npm:@types/snappyjs@~0.7.1": "0.7.1",
+    "npm:fuse.js@*": "7.0.0",
+    "npm:fuse.js@7.0.0": "7.0.0",
     "npm:snappyjs@0.7.0": "0.7.0"
   },
   "jsr": {
@@ -31,8 +35,11 @@
     "@bufbuild/protobuf@2.13.0": {
       "integrity": "sha512-acq7c49vxfm1ggJ95P70TX7ABDM0vxr1SYD3BB0o0jnBLB4OAqeHyKuN+cD3w80gXEDQ2zxHpR6CUeA+O/aU9g=="
     },
-    "fuse.js@7.5.0": {
-      "integrity": "sha512-sQtrEfA+ez/3G0cCZecF70oqpCRttCexYUG4mUrtWL49ULUzUyxokt5kyqwtKzj1270RaKih+hcP3qLcumccow=="
+    "@types/snappyjs@0.7.1": {
+      "integrity": "sha512-OxjzJ6cQZstysMh6PEwZWmK9qlKZyezHJKOkcUkZDooSFuog2votUEKkxMaTq51UQF3cJkXKQ+XGlj4FSl8JQQ=="
+    },
+    "fuse.js@7.0.0": {
+      "integrity": "sha512-14F4hBIxqKvD4Zz/XjDc3y94mNZN6pRv3U13Udo0lNLCWRBUsrMv2xwcF/y/Z5sV6+FQW+/ow68cHpm4sunt8Q=="
     },
     "snappyjs@0.7.0": {
       "integrity": "sha512-u5iEEXkMe2EInQio6Wv9LWHOQYRDbD2O9hzS27GpT/lwfIQhTCnHCTqedqHIHe9ZcvQo+9au6vngQayipz1NYw=="
@@ -40,7 +47,10 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/fs@^1.0.24",
+      "jsr:@std/path@^1.1.6",
       "npm:@bufbuild/protobuf@2.13.0",
+      "npm:@types/snappyjs@~0.7.1",
       "npm:fuse.js@7.0.0",
       "npm:snappyjs@0.7.0"
     ]
