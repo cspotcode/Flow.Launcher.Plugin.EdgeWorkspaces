@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@bufbuild/buf": "npm:@bufbuild/buf@^1.72.0",
+    "@bufbuild/protoc-gen-es": "npm:@bufbuild/protoc-gen-es@^2.14.0"
+  },
+  "nodeModulesDir": "auto" // @bufbuild/buf needs golang executables on $PATH; protoc-gen-es needs to be resolvable on $PATH by buf
+}

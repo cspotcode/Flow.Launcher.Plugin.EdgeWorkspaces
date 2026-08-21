@@ -5,8 +5,16 @@ Repo := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json"))
 
 InstallDir := "~/AppData/Roaming/FlowLauncher/Plugins/" + Name
 
+export PATH := source_dir() + '/tools/node_modules/.bin' + PATH_VAR_SEP + env_var('PATH')
+
 help:
     just --list --unsorted
+
+init-tools:
+    cd tools && deno install
+
+codegen: init-tools
+    buf generate
 
 # Pack .exe
 compile:
