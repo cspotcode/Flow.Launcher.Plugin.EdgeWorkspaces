@@ -3,7 +3,8 @@ set windows-shell := ["pwsh", "-noprofile", "-nologo", "-c"]
 Name := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Name)'`
 Repo := `deno eval 'console.log(JSON.parse(Deno.readTextFileSync("plugin.json")).Website.match(/github.com\/.+?\/(.+)/)[1])'`
 
-InstallDir := "~/AppData/Roaming/FlowLauncher/Plugins/" + Name
+InstalledVersion := '0.0.5'
+InstallDir := "~/AppData/Roaming/FlowLauncher/Plugins/" + Name + '-' + InstalledVersion
 
 export PATH := source_dir() + '/tools/node_modules/.bin' + PATH_VAR_SEP + env_var('PATH')
 
@@ -40,4 +41,4 @@ e:
 
 # Test *installed* plugin with a query. NOTE: currently hardcoded version number, needs to be updated every time you use it
 query-installed arg:
-    & "{{InstallDir}}-0.0.3/plugin.exe" '{"method": "query", "parameters": ["{{arg}}"]}'
+    & "{{InstallDir}}/plugin.exe" '{"method": "query", "parameters": ["{{arg}}"]}'
