@@ -1,0 +1,4 @@
+[submodule "dev"]
+	path = dev
+	url = https://github.com/cspotcode/Flow.Launcher.Plugin.EdgeWorkspaces-dev
+	branch = main
