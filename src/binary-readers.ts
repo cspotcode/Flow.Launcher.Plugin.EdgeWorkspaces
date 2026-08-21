@@ -1,7 +1,7 @@
-/**
- * Shared unsigned varint readers used by LevelDB, Snappy, and protobuf parsing.
- * Returns [value, bytesConsumed]. On incomplete input returns [0, 0].
- */
+// ---
+// Shared unsigned varint readers used by LevelDB, Snappy, and protobuf parsing.
+// Returns [value, bytesConsumed]. On incomplete input returns [0, 0].
+// ---
 
 /** Read a 32-bit unsigned varint (LevelDB lengths / Snappy). */
 export function readVarint32(buf: Uint8Array, pos: number): [number, number] {
@@ -34,4 +34,23 @@ export function readVarintNum(buf: Uint8Array, pos: number): [number, number] {
     if (factor > Number.MAX_SAFE_INTEGER) break;
   }
   return [0, 0];
+}
+
+// ---
+// uint LE readers
+// ---
+
+/** Read a fixed-width 32-bit little-endian unsigned integer */
+export function readU32LE(buf: Uint8Array, offset: number): number {
+  return (
+    buf[offset] |
+    (buf[offset + 1] << 8) |
+    (buf[offset + 2] << 16) |
+    (buf[offset + 3] << 24)
+  ) >>> 0;
+}
+
+/** Read a fixed-width 16-bit little-endian unsigned integer */
+export function readU16LE(buf: Uint8Array, offset: number): number {
+  return buf[offset] | (buf[offset + 1] << 8);
 }

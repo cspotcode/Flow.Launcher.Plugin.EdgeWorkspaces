@@ -15,15 +15,10 @@
 import { join } from "@std/path";
 // @ts-types="@types/snappyjs"
 import { uncompress as snappyUncompress } from "snappyjs";
-import { readVarint32, readVarintNum } from "./varint.ts";
+import { readU16LE, readU32LE, readVarint32, readVarintNum } from "./binary-readers.ts";
 
 /** Live value, or `null` for a deletion tombstone. */
 export type LevelDbValue = Uint8Array | null;
-
-function snappyUncompressBlock(src: Uint8Array): Uint8Array {
-  const out = snappyUncompress(src);
-  return out instanceof Uint8Array ? out : new Uint8Array(out);
-}
 
 // ---------------------------------------------------------------------------
 // LevelDB SSTable (.ldb / .sst) reader
@@ -39,7 +34,7 @@ function decompressBlock(fileData: Uint8Array, offset: number, length: number): 
   const raw = fileData.subarray(offset, offset + length);
   const comprType = fileData[offset + length]; // first trailer byte = compression type
   if (comprType === 0) return raw;
-  if (comprType === 1) return snappyUncompressBlock(raw);
+  if (comprType === 1) return snappyUncompress(raw);
   throw new Error(`Unsupported LevelDB compression type: ${comprType}`);
 }
 
@@ -52,11 +47,7 @@ function* iterateDataBlock(
 ): Generator<[key: Uint8Array, value: Uint8Array]> {
   if (block.length < 4) return;
 
-  const restartCount =
-    (block[block.length - 4]) |
-    (block[block.length - 3] << 8) |
-    (block[block.length - 2] << 16) |
-    (block[block.length - 1] << 24);
+  const restartCount = readU32LE(block, block.length - 4);
 
   if (restartCount <= 0 || restartCount > block.length / 4) return;
 
@@ -64,11 +55,7 @@ function* iterateDataBlock(
   if (restartArrayOffset < 0) return;
 
   // The first restart offset (restart[0]) should be 0
-  let offset =
-    (block[restartArrayOffset]) |
-    (block[restartArrayOffset + 1] << 8) |
-    (block[restartArrayOffset + 2] << 16) |
-    (block[restartArrayOffset + 3] << 24);
+  let offset = readU32LE(block, restartArrayOffset);
 
   let prevKey = new Uint8Array(0);
 
@@ -118,16 +105,8 @@ function* readLdbFile(
   const footerStart = fileData.length - FOOTER_SIZE;
 
   // Verify magic at bytes 40..47 of footer
-  const mlo =
-    (fileData[footerStart + 40]) |
-    (fileData[footerStart + 41] << 8) |
-    (fileData[footerStart + 42] << 16) |
-    ((fileData[footerStart + 43] << 24) >>> 0);
-  const mhi =
-    (fileData[footerStart + 44]) |
-    (fileData[footerStart + 45] << 8) |
-    (fileData[footerStart + 46] << 16) |
-    ((fileData[footerStart + 47] << 24) >>> 0);
+  const mlo = readU32LE(fileData, footerStart + 40);
+  const mhi = readU32LE(fileData, footerStart + 44);
   if ((mlo >>> 0) !== MAGIC_LO || (mhi >>> 0) !== MAGIC_HI) return;
 
   // Skip metaindex handle, read index handle
@@ -199,8 +178,7 @@ function* parseBatch(
   if (batch.length < 12) return;
 
   // Batch header: 8 bytes sequence number + 4 bytes count
-  const count =
-    (batch[8]) | (batch[9] << 8) | (batch[10] << 16) | (batch[11] << 24);
+  const count = readU32LE(batch, 8);
 
   let offset = 12;
 
@@ -252,7 +230,7 @@ function* readLogFile(
         fileData[blockPos + 4] === 0 && fileData[blockPos + 5] === 0
       ) break;
 
-      const length = fileData[blockPos + 4] | (fileData[blockPos + 5] << 8);
+      const length = readU16LE(fileData, blockPos + 4);
       const type = fileData[blockPos + 6];
       blockPos += LOG_HEADER_SIZE;
 
