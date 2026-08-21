@@ -4,6 +4,10 @@ import type { EdgeInstance } from "./edge-instances.ts";
 import { iterateLevelDb } from "./leveldb-reader.ts";
 import { decodeSyncEntity } from "./protobuf.ts";
 
+// Can parse two forms of workspaces:
+// v1: WorkspacesCache JSON file, used by Edge < 146
+// v2: LevelDB database storing Protobufs, used by Edge >= 146
+
 // ---------------------------------------------------------------------------
 // Profile discovery
 // ---------------------------------------------------------------------------
@@ -24,11 +28,11 @@ export function getProfiles(edgeInstance: EdgeInstance) {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace reading (v1 JSON or v2 protobuf)
+// Workspace parsing
 // ---------------------------------------------------------------------------
 
 export function getWorkspaces(instance: EdgeInstance, profile: string): WorkspaceDetail[] {
-  // v1: WorkspacesCache (JSON file) - used by Edge < 146
+  // Attempt to parse v1
   const cachePath = getWorkspacesCachePath(instance, profile);
   if (existsSync(cachePath)) {
     try {
@@ -41,7 +45,7 @@ export function getWorkspaces(instance: EdgeInstance, profile: string): Workspac
     }
   }
 
-  // v2: Sync Data LevelDB (protobuf) - used by Edge >= 146 after Workspaces v2 migration
+  // Parse v2
   const syncDbPath = getSyncDataLevelDbPath(instance, profile);
   if (existsSync(join(syncDbPath, "CURRENT"))) {
     return getWorkspacesFromSyncData(syncDbPath);
@@ -51,7 +55,12 @@ export function getWorkspaces(instance: EdgeInstance, profile: string): Workspac
 }
 
 function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
-  const workspaces = new Map<string, { name: string; color: number; tabCount: number }>();
+  interface Workspace {
+    name: string;
+    color: number;
+    tabCount: number;
+  }
+  const workspaces = new Map<string, Workspace>();
   const tabCounts = new Map<string, number>();
 
   // Keep only the most-recent write per key; tombstones (null) clear earlier values
@@ -98,17 +107,6 @@ function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
     name: ws.name,
     count: ws.tabCount,
     color: ws.color,
-    accent: false,
-    active: true,
-    collaboratorsCount: 0,
-    connectionUrl: "",
-    edgeWorkspaceVersion: 2,
-    isOwner: true,
-    isolated: false,
-    menuSubtitle: "",
-    shared: false,
-    showDisconnectedUI: false,
-    workspaceFluidStatus: 0,
   }));
 }
 
@@ -133,20 +131,25 @@ export interface WorkspacesJson {
   workspaces: WorkspaceDetail[];
 }
 
+// Commented fields were present in v1 JSON but never used by our code.
+// The new LevelDB parser doesn't parse meaningful values for them.
+// Therefore, rather than generate dummy values only to ignore them,
+// we've commented them out of this interface definition.
+// Kept for posterity in case we want to parse them from v2 in the future.
 export interface WorkspaceDetail {
-  accent: boolean;
-  active: boolean;
-  collaboratorsCount: number;
+  // accent: boolean;
+  // active: boolean;
+  // collaboratorsCount: number;
   color: number;
-  connectionUrl: string;
+  // connectionUrl: string;
   count: number;
-  edgeWorkspaceVersion: number;
+  // edgeWorkspaceVersion: number;
   id: string;
-  isOwner: boolean;
-  isolated: boolean;
-  menuSubtitle: string;
+  // isOwner: boolean;
+  // isolated: boolean;
+  // menuSubtitle: string;
   name: string;
-  shared: boolean;
-  showDisconnectedUI: boolean;
-  workspaceFluidStatus: number;
+  // shared: boolean;
+  // showDisconnectedUI: boolean;
+  // workspaceFluidStatus: number;
 }
