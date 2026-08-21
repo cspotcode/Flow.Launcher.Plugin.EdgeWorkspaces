@@ -10,9 +10,9 @@ help:
 
 # Pack .exe
 compile:
-    deno compile --no-check -A --target x86_64-pc-windows-msvc -o plugin.exe main.ts
+    deno compile --no-check -A --target x86_64-pc-windows-msvc -o plugin.exe src/main.ts
 compile-ci:
-    deno compile --no-check -A --target x86_64-pc-windows-msvc --frozen -o plugin.exe main.ts
+    deno compile --no-check -A --target x86_64-pc-windows-msvc --frozen -o plugin.exe src/main.ts
 
 # Install locally into your Flow Launcher
 install: compile
@@ -25,7 +25,7 @@ pack: compile-ci
 
 # Test plugin with a query
 query arg:
-    deno run -A ./main.ts '{"method": "query", "parameters": ["{{arg}}"]}'
+    deno run -A ./src/main.ts '{"method": "query", "parameters": ["{{arg}}"]}'
 
 e:
     explorer (get-item "{{InstallDir}}").fullname

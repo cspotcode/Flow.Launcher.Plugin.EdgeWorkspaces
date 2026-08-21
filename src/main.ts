@@ -1,8 +1,8 @@
-import { writeResponse } from "./src/flow-api.ts";
-import { readRequest, Result } from "./src/flow-api.ts";
+import { writeResponse } from "./flow-api.ts";
+import { readRequest, Result } from "./flow-api.ts";
 import Fuse, { type FuseResultMatch } from "npm:fuse.js";
-import { getProfiles, getWorkspaces, type WorkspaceDetail } from "./src/edge-workspaces.ts";
-import { discoverEdgeInstances, type EdgeInstance } from "./src/edge-instances.ts";
+import { getProfiles, getWorkspaces, type WorkspaceDetail } from "./edge-workspaces.ts";
+import { discoverEdgeInstances, type EdgeInstance } from "./edge-instances.ts";
 
 type Methods = 'open_workspace';
 
