@@ -63,21 +63,17 @@ function getWorkspacesFromSyncData(syncDbPath: string): WorkspaceDetail[] {
   const workspaces = new Map<string, Workspace>();
   const tabCounts = new Map<string, number>();
 
-  // Keep only the most-recent write per key; tombstones (null) clear earlier values
-  const latest = new Map<string, Uint8Array>();
+  const values: Uint8Array[] = [];
   const keyDecoder = new TextDecoder("utf-8", { fatal: false });
   try {
     for (const [key, value] of iterateLevelDb(syncDbPath)) {
-      const k = keyDecoder.decode(key);
-      if (!k.startsWith("edge_workspace-dt-")) continue;
-      if (value === null) latest.delete(k);
-      else latest.set(k, value);
+      if (keyDecoder.decode(key).startsWith("edge_workspace-dt-")) values.push(value);
     }
   } catch {
     return [];
   }
 
-  for (const [, value] of latest) {
+  for (const value of values) {
     try {
       const { entity } = decodeSyncEntity(value);
       if (!entity?.id) continue;

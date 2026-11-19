@@ -1,15 +1,30 @@
 /**
- * Minimal pure-TypeScript LevelDB reader for Edge Workspaces v2.
- * Reads .ldb (SSTable) and .log (Write-Ahead Log) files from a LevelDB directory.
+ * Minimal pure-TypeScript, read-only LevelDB reader for Edge Workspaces v2.
  * Snappy block decompression uses the `snappyjs` dependency.
  *
- * Format references:
- * - https://github.com/google/leveldb/blob/master/doc/table_format.md
- * - https://github.com/google/leveldb/blob/master/doc/log_format.md
- * - Ported from https://github.com/cclgroupltd/ccl_chromium_reader
+ * Presents the same view a LevelDB client would see: only the latest live value
+ * of each key, in ascending key order. Superseded versions, deletion tombstones,
+ * and sequence numbers are resolved internally and never exposed.
  *
- * Yields `[key, value]` for live entries and `[key, null]` for deletion tombstones
- * so callers can clear superseded keys when replaying newer SST/WAL writes.
+ * How it works (mirrors LevelDB's own read path):
+ * 1. `CURRENT` names the active MANIFEST. Replaying the MANIFEST's VersionEdit
+ *    records yields the set of live table files and the oldest log still needed.
+ *    Files on disk not listed there are obsolete and ignored.
+ * 2. Each live table (.ldb/.sst) is already sorted by internal key: user key
+ *    ascending, then sequence number descending. Live logs (.log) are unsorted
+ *    write batches; their entries are collected and sorted the same way (this is
+ *    what LevelDB's memtable does on recovery).
+ * 3. All sources are k-way merged by internal key, so every version of a key
+ *    arrives together, newest first. The first version is kept; if it is a
+ *    deletion, the key is skipped. Older versions are discarded.
+ *
+ * Format references:
+ * - https://github.com/google/leveldb/blob/main/doc/impl.md
+ * - https://github.com/google/leveldb/blob/main/doc/table_format.md
+ * - https://github.com/google/leveldb/blob/main/doc/log_format.md
+ * - https://github.com/google/leveldb/blob/main/db/version_edit.cc (MANIFEST records)
+ * - https://github.com/google/leveldb/blob/main/db/db_iter.cc (version/deletion resolution)
+ * - Originally ported from https://github.com/cclgroupltd/ccl_chromium_reader
  */
 
 import { join } from "@std/path";
@@ -17,8 +32,11 @@ import { join } from "@std/path";
 import { uncompress as snappyUncompress } from "snappyjs";
 import { readU16LE, readU32LE, readVarint32, readVarintNum } from "./binary-readers.ts";
 
-/** Live value, or `null` for a deletion tombstone. */
-export type LevelDbValue = Uint8Array | null;
+/** A live key-value pair: the latest, non-deleted value of a key. */
+export type LevelDbEntry = [key: Uint8Array, value: Uint8Array];
+
+/** Internal: one versioned write. `value` is `null` for a deletion tombstone. */
+type VersionedEntry = [key: Uint8Array, value: Uint8Array | null, seq: number];
 
 // ---------------------------------------------------------------------------
 // LevelDB SSTable (.ldb / .sst) reader
@@ -99,7 +117,7 @@ function* iterateDataBlock(
  */
 function* readLdbFile(
   fileData: Uint8Array,
-): Generator<[key: Uint8Array, value: LevelDbValue]> {
+): Generator<VersionedEntry> {
   if (fileData.length < FOOTER_SIZE) return;
 
   const footerStart = fileData.length - FOOTER_SIZE;
@@ -144,23 +162,27 @@ function* readLdbFile(
     }
 
     for (const [internalKey, value] of iterateDataBlock(dataBlock)) {
-      // Internal key = user_key + 8-byte packed(seq, type) LE
-      // Lowest byte of packed = value type (1=live, 0=deletion)
+      // Internal key = user_key + 8-byte packed(seq << 8 | type) LE
+      // Lowest byte of packed = value type (1=live, 0=deletion); upper 7 bytes = sequence
       if (internalKey.length < 8) continue;
-      const valueType = internalKey[internalKey.length - 8];
-      const userKey = internalKey.subarray(0, internalKey.length - 8);
+      const tagOffset = internalKey.length - 8;
+      const valueType = internalKey[tagOffset];
+      const seq = readU32LE(internalKey, tagOffset + 4) * 0x1000000 +
+        (readU32LE(internalKey, tagOffset) >>> 8);
+      const userKey = internalKey.subarray(0, tagOffset);
 
       if (valueType === 1) {
-        yield [userKey, value];
+        yield [userKey, value, seq];
       } else if (valueType === 0) {
-        yield [userKey, null];
+        yield [userKey, null, seq];
       }
     }
   }
 }
 
+
 // ---------------------------------------------------------------------------
-// LevelDB Write-Ahead Log (.log) reader
+// LevelDB log file reader (.log write-ahead logs and MANIFEST)
 // ---------------------------------------------------------------------------
 
 const LOG_BLOCK_SIZE = 32768;
@@ -171,49 +193,12 @@ const LOG_FIRST = 2;
 const LOG_MIDDLE = 3;
 const LOG_LAST = 4;
 
-/** Parse a WriteBatch payload and yield key-value pairs (null = deletion). */
-function* parseBatch(
-  batch: Uint8Array,
-): Generator<[key: Uint8Array, value: LevelDbValue]> {
-  if (batch.length < 12) return;
-
-  // Batch header: 8 bytes sequence number + 4 bytes count
-  const count = readU32LE(batch, 8);
-
-  let offset = 12;
-
-  for (let i = 0; i < count && offset < batch.length; i++) {
-    const valueType = batch[offset++];
-
-    const [keyLen, kb] = readVarint32(batch, offset);
-    if (kb === 0) return;
-    offset += kb;
-    if (offset + keyLen > batch.length) return;
-
-    const key = batch.subarray(offset, offset + keyLen);
-    offset += keyLen;
-
-    if (valueType === 1) {
-      // Live value
-      const [valLen, vb] = readVarint32(batch, offset);
-      if (vb === 0) return;
-      offset += vb;
-      if (offset + valLen > batch.length) return;
-
-      const value = batch.subarray(offset, offset + valLen);
-      offset += valLen;
-      yield [key, value];
-    } else if (valueType === 0) {
-      // Deletion tombstone - no value bytes follow
-      yield [key, null];
-    }
-  }
-}
-
-/** Iterate key-value pairs from a WAL log file (null value = deletion). */
-function* readLogFile(
-  fileData: Uint8Array,
-): Generator<[key: Uint8Array, value: LevelDbValue]> {
+/**
+ * Iterate logical records from a file in LevelDB log format, reassembling
+ * records that were fragmented across blocks. Used for both .log write-ahead
+ * logs (records are WriteBatches) and MANIFEST files (records are VersionEdits).
+ */
+function* readLogRecords(fileData: Uint8Array): Generator<Uint8Array> {
   let filePos = 0;
   let currentRecord: Uint8Array | null = null;
 
@@ -240,7 +225,7 @@ function* readLogFile(
       blockPos += length;
 
       if (type === LOG_FULL) {
-        yield* parseBatch(data);
+        yield data;
       } else if (type === LOG_FIRST) {
         currentRecord = new Uint8Array(data);
       } else if ((type === LOG_MIDDLE || type === LOG_LAST) && currentRecord !== null) {
@@ -250,7 +235,7 @@ function* readLogFile(
         next.set(data, prev.length);
         if (type === LOG_LAST) {
           currentRecord = null;
-          yield* parseBatch(next);
+          yield next;
         } else {
           currentRecord = next;
         }
@@ -261,59 +246,292 @@ function* readLogFile(
   }
 }
 
+/** Parse a WriteBatch payload and yield its versioned writes. */
+function* parseBatch(batch: Uint8Array): Generator<VersionedEntry> {
+  if (batch.length < 12) return;
+
+  // Batch header: 8 bytes sequence number + 4 bytes count.
+  // Record i in the batch has sequence number baseSeq + i.
+  const baseSeq = readU32LE(batch, 4) * 0x100000000 + readU32LE(batch, 0);
+  const count = readU32LE(batch, 8);
+
+  let offset = 12;
+
+  for (let i = 0; i < count && offset < batch.length; i++) {
+    const valueType = batch[offset++];
+
+    const [keyLen, kb] = readVarint32(batch, offset);
+    if (kb === 0) return;
+    offset += kb;
+    if (offset + keyLen > batch.length) return;
+
+    const key = batch.subarray(offset, offset + keyLen);
+    offset += keyLen;
+
+    if (valueType === 1) {
+      // Live value
+      const [valLen, vb] = readVarint32(batch, offset);
+      if (vb === 0) return;
+      offset += vb;
+      if (offset + valLen > batch.length) return;
+
+      const value = batch.subarray(offset, offset + valLen);
+      offset += valLen;
+      yield [key, value, baseSeq + i];
+    } else if (valueType === 0) {
+      // Deletion tombstone - no value bytes follow
+      yield [key, null, baseSeq + i];
+    } else {
+      return; // Unknown record type; the rest of the batch can't be parsed
+    }
+  }
+}
+
+/**
+ * Read all writes from a .log file, sorted by internal key order, like
+ * LevelDB's memtable.
+ */
+function readLogFileSorted(fileData: Uint8Array): VersionedEntry[] {
+  const entries: VersionedEntry[] = [];
+  for (const record of readLogRecords(fileData)) {
+    for (const entry of parseBatch(record)) entries.push(entry);
+  }
+  return entries.sort(compareInternal);
+}
+
+// ---------------------------------------------------------------------------
+// MANIFEST reader
+// ---------------------------------------------------------------------------
+
+// VersionEdit field tags, from leveldb/db/version_edit.cc
+const TAG_COMPARATOR = 1;
+const TAG_LOG_NUMBER = 2;
+const TAG_NEXT_FILE_NUMBER = 3;
+const TAG_LAST_SEQUENCE = 4;
+const TAG_COMPACT_POINTER = 5;
+const TAG_DELETED_FILE = 6;
+const TAG_NEW_FILE = 7;
+// 8 was kLargeValueRef, no longer used
+const TAG_PREV_LOG_NUMBER = 9;
+
+const BYTEWISE_COMPARATOR = "leveldb.BytewiseComparator";
+
+interface ManifestState {
+  comparator: string | undefined;
+  /** File numbers of live tables, across all levels */
+  liveTables: Set<number>;
+  /** Logs numbered >= this are live */
+  logNumber: number;
+  /** An older log that may also still be live (0 if none) */
+  prevLogNumber: number;
+}
+
+/** Replay every VersionEdit in a MANIFEST to get the current set of live files. */
+function parseManifest(fileData: Uint8Array): ManifestState {
+  const state: ManifestState = {
+    comparator: undefined,
+    liveTables: new Set(),
+    logNumber: 0,
+    prevLogNumber: 0,
+  };
+
+  for (const record of readLogRecords(fileData)) {
+    let pos = 0;
+    const num = () => {
+      const [value, n] = readVarintNum(record, pos);
+      if (n === 0) throw new Error("Truncated MANIFEST VersionEdit");
+      pos += n;
+      return value;
+    };
+    const slice = () => {
+      const len = num();
+      if (pos + len > record.length) throw new Error("Truncated MANIFEST VersionEdit");
+      const bytes = record.subarray(pos, pos + len);
+      pos += len;
+      return bytes;
+    };
+
+    while (pos < record.length) {
+      const tag = num();
+      switch (tag) {
+        case TAG_COMPARATOR:
+          state.comparator = new TextDecoder().decode(slice());
+          break;
+        case TAG_LOG_NUMBER:
+          state.logNumber = num();
+          break;
+        case TAG_NEXT_FILE_NUMBER:
+        case TAG_LAST_SEQUENCE:
+          num();
+          break;
+        case TAG_COMPACT_POINTER:
+          num(); // level
+          slice(); // internal key
+          break;
+        case TAG_DELETED_FILE:
+          num(); // level
+          state.liveTables.delete(num());
+          break;
+        case TAG_NEW_FILE: {
+          num(); // level
+          const fileNumber = num();
+          num(); // file size
+          slice(); // smallest internal key
+          slice(); // largest internal key
+          state.liveTables.add(fileNumber);
+          break;
+        }
+        case TAG_PREV_LOG_NUMBER:
+          state.prevLogNumber = num();
+          break;
+        default:
+          throw new Error(`Unknown MANIFEST VersionEdit tag: ${tag}`);
+      }
+    }
+  }
+
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// Internal key ordering and merging
+// ---------------------------------------------------------------------------
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const d = a[i] - b[i];
+    if (d !== 0) return d;
+  }
+  return a.length - b.length;
+}
+
+/** LevelDB internal key order: user key ascending, then sequence number descending. */
+function compareInternal(a: VersionedEntry, b: VersionedEntry): number {
+  return compareBytes(a[0], b[0]) || b[2] - a[2];
+}
+
+/**
+ * K-way merge of sources that are each sorted by internal key order.
+ * A source that throws (corrupt data) is dropped from the merge.
+ */
+function* mergeSorted(sources: Iterator<VersionedEntry>[]): Generator<VersionedEntry> {
+  const advance = (source: Iterator<VersionedEntry>) => {
+    try {
+      const next = source.next();
+      if (!next.done) return next.value;
+    } catch {
+      // Corrupt source: drop it
+    }
+    return undefined;
+  };
+
+  const heads: { source: Iterator<VersionedEntry>; entry: VersionedEntry }[] = [];
+  for (const source of sources) {
+    const entry = advance(source);
+    if (entry) heads.push({ source, entry });
+  }
+
+  // Sources are few (a handful of tables + logs), so a linear scan is fine
+  while (heads.length > 0) {
+    let min = 0;
+    for (let i = 1; i < heads.length; i++) {
+      if (compareInternal(heads[i].entry, heads[min].entry) < 0) min = i;
+    }
+    const head = heads[min];
+    yield head.entry;
+    const entry = advance(head.source);
+    if (entry) head.entry = entry;
+    else heads.splice(min, 1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
+/** LevelDB names files with zero-padded *decimal* numbers, e.g. 000123.ldb */
+function parseFileName(name: string): { number: number; isLog: boolean } | undefined {
+  const match = /^(\d+)\.(ldb|sst|log)$/i.exec(name);
+  if (!match) return undefined;
+  return { number: parseInt(match[1], 10), isLog: match[2].toLowerCase() === "log" };
+}
+
 /**
- * Iterate key-value pairs from all .ldb and .log files in a LevelDB directory.
- * Files are processed in ascending file-number order (log files last, since
- * they contain the most recent writes). Deletion tombstones are yielded as
- * `[key, null]` so callers can remove superseded entries.
- *
- * Silently skips files that cannot be read or parsed (e.g. locked by Edge).
+ * Determine which table and log files are live, from CURRENT -> MANIFEST.
+ * Falls back to every table and log file on disk if the MANIFEST can't be read.
+ * That fallback is usually still correct, since versions are resolved by sequence
+ * number, but could resurrect a deleted key from an obsolete, not-yet-removed file.
  */
-export function* iterateLevelDb(
-  dbPath: string,
-): Generator<[key: Uint8Array, value: LevelDbValue]> {
-  let entries: Deno.DirEntry[];
+function getLiveFiles(dbPath: string): { tables: string[]; logs: string[] } {
+  const onDisk: { number: number; isLog: boolean; path: string }[] = [];
+  for (const entry of Deno.readDirSync(dbPath)) {
+    if (!entry.isFile) continue;
+    const parsed = parseFileName(entry.name);
+    if (parsed) onDisk.push({ ...parsed, path: join(dbPath, entry.name) });
+  }
+
+  let manifest: ManifestState | undefined;
   try {
-    entries = [...Deno.readDirSync(dbPath)];
+    const manifestName = Deno.readTextFileSync(join(dbPath, "CURRENT")).trim();
+    manifest = parseManifest(Deno.readFileSync(join(dbPath, manifestName)));
   } catch {
-    return;
+    manifest = undefined;
   }
 
-  function fileNum(name: string) {
-    return parseInt(name, 16) || 0;
+  if (manifest?.comparator !== undefined && manifest.comparator !== BYTEWISE_COMPARATOR) {
+    throw new Error(`Unsupported LevelDB comparator: ${manifest.comparator}`);
   }
 
-  // Sort: .ldb/.sst first (older), then .log (newest writes)
-  const ldbFiles = entries
-    .filter((e) => e.isFile && /\.(ldb|sst)$/i.test(e.name))
-    .sort((a, b) => fileNum(a.name) - fileNum(b.name))
-    .map((e) => join(dbPath, e.name));
+  const isLiveTable = (n: number) => !manifest || manifest.liveTables.has(n);
+  const isLiveLog = (n: number) =>
+    !manifest || n >= manifest.logNumber || n === manifest.prevLogNumber;
 
-  const logFiles = entries
-    .filter((e) => e.isFile && /\.log$/i.test(e.name))
-    .sort((a, b) => fileNum(a.name) - fileNum(b.name))
-    .map((e) => join(dbPath, e.name));
+  return {
+    tables: onDisk.filter((f) => !f.isLog && isLiveTable(f.number)).map((f) => f.path),
+    logs: onDisk.filter((f) => f.isLog && isLiveLog(f.number)).map((f) => f.path),
+  };
+}
 
-  for (const filePath of [...ldbFiles, ...logFiles]) {
-    let fileData: Uint8Array;
+/**
+ * Iterate the live contents of a LevelDB database: the latest non-deleted value
+ * of each key, in ascending key order.
+ *
+ * Skips files that cannot be read or parsed (e.g. locked or corrupt).
+ * Throws if the directory can't be read or uses an unsupported comparator.
+ */
+export function* iterateLevelDb(dbPath: string): Generator<LevelDbEntry> {
+  const { tables, logs } = getLiveFiles(dbPath);
+
+  const readFile = (path: string) => {
     try {
-      fileData = Deno.readFileSync(filePath);
+      return Deno.readFileSync(path);
     } catch {
-      continue; // locked or unreadable - skip
+      return undefined; // locked or unreadable - skip
     }
+  };
 
+  const sources: Iterator<VersionedEntry>[] = [];
+  for (const path of tables) {
+    const data = readFile(path);
+    if (data) sources.push(readLdbFile(data));
+  }
+  for (const path of logs) {
+    const data = readFile(path);
+    if (!data) continue;
     try {
-      if (/\.log$/i.test(filePath)) {
-        yield* readLogFile(fileData);
-      } else {
-        yield* readLdbFile(fileData);
-      }
+      sources.push(readLogFileSorted(data).values());
     } catch {
-      // Corrupt or unrecognised format - skip
+      // Corrupt log - skip
     }
+  }
+
+  // Versions of a key arrive together, newest first. Keep only the first;
+  // if it is a deletion, the key is gone.
+  let prevKey: Uint8Array | undefined;
+  for (const [key, value] of mergeSorted(sources)) {
+    if (prevKey && compareBytes(key, prevKey) === 0) continue;
+    prevKey = key;
+    if (value !== null) yield [key, value];
   }
 }
